@@ -1,201 +1,311 @@
-# PowerShell Script to Set Up the Médecin Microservice (No Sequelize)
-# Run this script inside your main project directory
+# Notification Service Creator
+# Usage: Right-click -> Run with PowerShell
+# OR: powershell -ExecutionPolicy Bypass -File create-notification-service.ps1
 
-# Step 1: Create Directories
-$serviceDir = "medecin-service"
-$srcDir = "$serviceDir\src"
-$folders = @("controllers", "routes", "config", "models")
-New-Item -ItemType Directory -Path $serviceDir -Force
-foreach ($folder in $folders) {
-    New-Item -ItemType Directory -Path "$srcDir\$folder" -Force
+$serviceName = "notification-service"
+$port = 5005
+
+# Create directory structure
+New-Item -ItemType Directory -Path .\$serviceName -Force
+Set-Location .\$serviceName
+
+"Creating folder structure..."
+$folders = @(
+    "src",
+    "src/controllers",
+    "src/models",
+    "src/routes",
+    "src/middleware",
+    "src/services",
+    "docker"
+)
+
+$folders | ForEach-Object {
+    New-Item -ItemType Directory -Path $_ -Force
 }
 
-# Step 2: Initialize Node.js Project
-Set-Location $serviceDir
-npm init -y
+# Create files
+"Creating files..."
 
-# Step 3: Install Dependencies
-npm install express mysql dotenv body-parser cors
-
-# Step 4: Create .env File
+# 1. package.json
 @"
-DB_HOST=localhost
-DB_USER=root
-DB_PASS=rootpassword
-DB_NAME=medecin_db
-PORT=5004
-"@ | Out-File -Encoding utf8 .env
+{
+  "name": "$serviceName",
+  "version": "1.0.0",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^7.3.1",
+    "dotenv": "^16.0.3",
+    "jsonwebtoken": "^9.0.0",
+    "nodemailer": "^6.9.3",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.20"
+  }
+}
+"@ | Out-File -FilePath "package.json" -Encoding utf8
 
-# Step 5: Create Database Connection (config/db.js)
+# 2. .env
 @"
-const mysql = require('mysql');
-require('dotenv').config();
+PORT=$port
+MONGODB_URI=mongodb://mongo-notification:27017/notificationService
+JWT_SECRET=your_jwt_secret_here
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_email_password
+"@ | Out-File -FilePath ".env" -Encoding utf8
 
-const connection = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME
-});
-
-connection.connect(err => {
-  if (err) throw err;
-  console.log("Connected to MySQL Database!");
-});
-
-module.exports = connection;
-"@ | Out-File -Encoding utf8 src/config/db.js
-
-# Step 6: Create Doctor Model (models/doctor.js)
+# 3. src/controllers/notificationController.js
 @"
-const connection = require('../config/db');
+const Notification = require('../models/notificationModel');
+const notificationService = require('../services/notificationService');
 
-const Doctor = {
-  getAll: (callback) => {
-    connection.query("SELECT * FROM doctors", callback);
-  },
-  
-  getById: (id, callback) => {
-    connection.query("SELECT * FROM doctors WHERE id = ?", [id], callback);
-  },
-  
-  create: (data, callback) => {
-    connection.query("INSERT INTO doctors (name, specialty, availability) VALUES (?, ?, ?)", 
-      [data.name, data.specialty, JSON.stringify(data.availability)], callback);
-  },
-
-  update: (id, data, callback) => {
-    connection.query("UPDATE doctors SET name = ?, specialty = ?, availability = ? WHERE id = ?", 
-      [data.name, data.specialty, JSON.stringify(data.availability), id], callback);
-  },
-
-  delete: (id, callback) => {
-    connection.query("DELETE FROM doctors WHERE id = ?", [id], callback);
+exports.createNotification = async (req, res) => {
+  try {
+    const { message, userId } = req.body;
+    const notification = new Notification({ message, userId });
+    await notification.save();
+    
+    // Send email notification
+    await notificationService.sendEmail(
+      'recipient@example.com',
+      'New Notification',
+      message
+    );
+    
+    res.status(201).json(notification);
+  } catch (error) {
+    res.status(500).json({ error: 'Error creating notification' });
   }
 };
 
-module.exports = Doctor;
-"@ | Out-File -Encoding utf8 src/models/doctor.js
+exports.getNotifications = async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.user.id });
+    res.status(200).json(notifications);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching notifications' });
+  }
+};
 
-# Step 7: Create Doctor Controller (controllers/doctorController.js)
+exports.deleteNotification = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Notification.findByIdAndDelete(id);
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: 'Error deleting notification' });
+  }
+};
+"@ | Out-File -FilePath "src/controllers/notificationController.js" -Encoding utf8
+
+# 4. src/models/notificationModel.js
 @"
-const Doctor = require('../models/doctor');
+const mongoose = require('mongoose');
 
-exports.getAllDoctors = (req, res) => {
-  Doctor.getAll((err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
-  });
-};
+const notificationSchema = new mongoose.Schema({
+  message: { 
+    type: String, 
+    required: true 
+  },
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'sent', 'failed'],
+    default: 'pending'
+  }
+});
 
-exports.getDoctorById = (req, res) => {
-  Doctor.getById(req.params.id, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (results.length === 0) return res.status(404).json({ error: 'Doctor not found' });
-    res.json(results[0]);
-  });
-};
+module.exports = mongoose.model('Notification', notificationSchema);
+"@ | Out-File -FilePath "src/models/notificationModel.js" -Encoding utf8
 
-exports.createDoctor = (req, res) => {
-  Doctor.create(req.body, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: results.insertId, ...req.body });
-  });
-};
-
-exports.updateDoctor = (req, res) => {
-  Doctor.update(req.params.id, req.body, (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Doctor updated successfully' });
-  });
-};
-
-exports.deleteDoctor = (req, res) => {
-  Doctor.delete(req.params.id, (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Doctor deleted successfully' });
-  });
-};
-"@ | Out-File -Encoding utf8 src/controllers/doctorController.js
-
-# Step 8: Create Routes (routes/doctorRoutes.js)
+# 5. src/routes/notificationRoutes.js
 @"
 const express = require('express');
 const router = express.Router();
-const doctorController = require('../controllers/doctorController');
+const notificationController = require('../controllers/notificationController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.get('/doctors', doctorController.getAllDoctors);
-router.get('/doctors/:id', doctorController.getDoctorById);
-router.post('/doctors', doctorController.createDoctor);
-router.put('/doctors/:id', doctorController.updateDoctor);
-router.delete('/doctors/:id', doctorController.deleteDoctor);
+// Protected routes
+router.post('/', authMiddleware.authenticate, notificationController.createNotification);
+router.get('/', authMiddleware.authenticate, notificationController.getNotifications);
+router.delete('/:id', authMiddleware.authenticate, notificationController.deleteNotification);
 
 module.exports = router;
-"@ | Out-File -Encoding utf8 src/routes/doctorRoutes.js
+"@ | Out-File -FilePath "src/routes/notificationRoutes.js" -Encoding utf8
 
-# Step 9: Create Express App (app.js)
+# 6. src/middleware/authMiddleware.js
 @"
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const doctorRoutes = require('./src/routes/doctorRoutes');
+const jwt = require('jsonwebtoken');
+
+exports.authenticate = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(403).json({ message: 'No token provided' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+"@ | Out-File -FilePath "src/middleware/authMiddleware.js" -Encoding utf8
+
+# 7. src/services/notificationService.js
+@"
+const nodemailer = require('nodemailer');
+const logger = console;
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+exports.sendEmail = async (to, subject, text) => {
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to,
+      subject,
+      text
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    logger.info('Email sent:', info.messageId);
+    return true;
+  } catch (error) {
+    logger.error('Error sending email:', error);
+    return false;
+  }
+};
+
+exports.sendSMS = async (phoneNumber, message) => {
+  // Implement SMS functionality here
+  logger.info(\`SMS sent to \${phoneNumber}: \${message}\`);
+  return true;
+};
+"@ | Out-File -FilePath "src/services/notificationService.js" -Encoding utf8
+
+# 8. src/app.js
+@"
 require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
-app.use('/api', doctorRoutes);
+const PORT = process.env.PORT || $port;
 
-const PORT = process.env.PORT || 5004;
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Database connection
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('Connected to MongoDB'))
+.catch(err => console.error('MongoDB connection error:', err));
+
+// Routes
+app.use('/api/notifications', notificationRoutes);
+
+// Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Internal Server Error' });
+});
 
 app.listen(PORT, () => {
-  console.log(`Médecin Service running on port \${PORT}`);
+  console.log(\`Notification Service running on port \${PORT}\`);
 });
-"@ | Out-File -Encoding utf8 app.js
+"@ | Out-File -FilePath "src/app.js" -Encoding utf8
 
-# Step 10: Create Dockerfile
+# 9. Dockerfile
 @"
 FROM node:18
-WORKDIR /app
-COPY package.json .
-RUN npm install
-COPY . .
-EXPOSE 5004
-CMD ["node", "app.js"]
-"@ | Out-File -Encoding utf8 Dockerfile
 
-# Step 11: Create docker-compose.yml
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE $port
+
+CMD ["node", "src/app.js"]
+"@ | Out-File -FilePath "Dockerfile" -Encoding utf8
+
+# 10. docker/docker-compose.yml
 @"
 version: '3.8'
+
 services:
-  mysql:
-    image: mysql:8
+  mongo-notification:
+    image: mongo:6.0
+    container_name: mongo-notification
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: medecin_db
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+    volumes:
+      - notification_data:/data/db
     ports:
-      - "3306:3306"
-    networks:
-      - healthcare-network
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
-  medecin-service:
-    build: .
+  notification-service:
+    build: ..
     ports:
-      - "5004:5004"
+      - "$($port):$($port)"
     environment:
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASS=rootpassword
-      - DB_NAME=medecin_db
+      - MONGODB_URI=mongodb://root:mongopassword@mongo-notification:27017/notificationService?authSource=admin
+      - PORT=$port
     depends_on:
-      - mysql
-    networks:
-      - healthcare-network
+      mongo-notification:
+        condition: service_healthy
 
-networks:
-  healthcare-network:
-    driver: bridge
-"@ | Out-File -Encoding utf8 docker-compose.yml
+volumes:
+  notification_data:
+"@ | Out-File -FilePath "docker/docker-compose.yml" -Encoding utf8
 
-# Step 12: Run the Service
-Write-Host "Setup complete. Run 'docker-compose up --build' to start the service."
+# Final instructions
+Write-Host "`nNotification Service created successfully!" -ForegroundColor Green
+Write-Host "Service will run on port $port" -ForegroundColor Cyan
+Write-Host "`nNext steps:" -ForegroundColor Yellow
+Write-Host "1. cd $serviceName"
+Write-Host "2. npm install"
+Write-Host "3. To run with Docker: docker-compose -f docker/docker-compose.yml up --build"
+Write-Host "4. To run locally: npm install && npm start`n"
