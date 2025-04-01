@@ -1,161 +1,201 @@
-# Définir le dossier du projet
-$projectDir = "dossier-medical-service"
-$envDir = "$projectDir\venv"
-$files = @(
-    "$projectDir\app\__init__.py",
-    "$projectDir\app\config.py",
-    "$projectDir\app\database.py",
-    "$projectDir\app\models.py",
-    "$projectDir\app\routes.py",
-    "$projectDir\app.py",
-    "$projectDir\requirements.txt",
-    "$projectDir\Dockerfile"
-)
+# PowerShell Script to Set Up the Médecin Microservice (No Sequelize)
+# Run this script inside your main project directory
 
-# Vérifier si le dossier du projet existe
-if (!(Test-Path $projectDir)) {
-    Write-Host "Création du dossier du projet..."
-    New-Item -ItemType Directory -Path $projectDir -Force
+# Step 1: Create Directories
+$serviceDir = "medecin-service"
+$srcDir = "$serviceDir\src"
+$folders = @("controllers", "routes", "config", "models")
+New-Item -ItemType Directory -Path $serviceDir -Force
+foreach ($folder in $folders) {
+    New-Item -ItemType Directory -Path "$srcDir\$folder" -Force
 }
 
-# Créer les sous-dossiers nécessaires
-Write-Host "Création de la structure du projet..."
-New-Item -ItemType Directory -Path "$projectDir\app" -Force
+# Step 2: Initialize Node.js Project
+Set-Location $serviceDir
+npm init -y
 
-# Créer les fichiers nécessaires
-foreach ($file in $files) {
-    if (!(Test-Path $file)) {
-        New-Item -ItemType File -Path $file -Force
-    }
-}
+# Step 3: Install Dependencies
+npm install express mysql dotenv body-parser cors
 
-# Écrire le contenu des fichiers
-Write-Host "Écriture du contenu des fichiers..."
-
-# config.py
+# Step 4: Create .env File
 @"
-import os
+DB_HOST=localhost
+DB_USER=root
+DB_PASS=rootpassword
+DB_NAME=medecin_db
+PORT=5004
+"@ | Out-File -Encoding utf8 .env
 
-class Config:
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/myheart_db")
-"@ | Set-Content "$projectDir\app\config.py"
-
-# database.py
+# Step 5: Create Database Connection (config/db.js)
 @"
-from pymongo import MongoClient
-from app.config import Config
+const mysql = require('mysql');
+require('dotenv').config();
 
-client = MongoClient(Config.MONGO_URI)
-db = client["myheart_db"]
-medical_records_collection = db["medical_records"]
-"@ | Set-Content "$projectDir\app\database.py"
+const connection = mysql.createConnection({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
+});
 
-# models.py
+connection.connect(err => {
+  if (err) throw err;
+  console.log("Connected to MySQL Database!");
+});
+
+module.exports = connection;
+"@ | Out-File -Encoding utf8 src/config/db.js
+
+# Step 6: Create Doctor Model (models/doctor.js)
 @"
-from datetime import datetime
+const connection = require('../config/db');
 
-def medical_record_schema(data):
-    return {
-        "patient_id": data.get("patient_id"),
-        "diagnosis": data.get("diagnosis"),
-        "treatments": data.get("treatments", []),
-        "doctor_notes": data.get("doctor_notes", ""),
-        "created_at": data.get("created_at", datetime.utcnow())
-    }
-"@ | Set-Content "$projectDir\app\models.py"
+const Doctor = {
+  getAll: (callback) => {
+    connection.query("SELECT * FROM doctors", callback);
+  },
+  
+  getById: (id, callback) => {
+    connection.query("SELECT * FROM doctors WHERE id = ?", [id], callback);
+  },
+  
+  create: (data, callback) => {
+    connection.query("INSERT INTO doctors (name, specialty, availability) VALUES (?, ?, ?)", 
+      [data.name, data.specialty, JSON.stringify(data.availability)], callback);
+  },
 
-# routes.py
+  update: (id, data, callback) => {
+    connection.query("UPDATE doctors SET name = ?, specialty = ?, availability = ? WHERE id = ?", 
+      [data.name, data.specialty, JSON.stringify(data.availability), id], callback);
+  },
+
+  delete: (id, callback) => {
+    connection.query("DELETE FROM doctors WHERE id = ?", [id], callback);
+  }
+};
+
+module.exports = Doctor;
+"@ | Out-File -Encoding utf8 src/models/doctor.js
+
+# Step 7: Create Doctor Controller (controllers/doctorController.js)
 @"
-from flask import Blueprint, request, jsonify
-from app.database import medical_records_collection
-from app.models import medical_record_schema
+const Doctor = require('../models/doctor');
 
-medical_bp = Blueprint("medical", __name__)
+exports.getAllDoctors = (req, res) => {
+  Doctor.getAll((err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(results);
+  });
+};
 
-@medical_bp.route("/medical_records", methods=["POST"])
-def add_medical_record():
-    data = request.json
-    medical_record = medical_record_schema(data)
-    medical_records_collection.insert_one(medical_record)
-    return jsonify({"message": "Dossier médical ajouté avec succès"}), 201
+exports.getDoctorById = (req, res) => {
+  Doctor.getById(req.params.id, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ error: 'Doctor not found' });
+    res.json(results[0]);
+  });
+};
 
-@medical_bp.route("/medical_records", methods=["GET"])
-def get_all_medical_records():
-    records = list(medical_records_collection.find({}, {"_id": 0}))
-    return jsonify(records), 200
+exports.createDoctor = (req, res) => {
+  Doctor.create(req.body, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: results.insertId, ...req.body });
+  });
+};
 
-@medical_bp.route("/medical_records/<patient_id>", methods=["GET"])
-def get_medical_record(patient_id):
-    record = medical_records_collection.find_one({"patient_id": patient_id}, {"_id": 0})
-    if record:
-        return jsonify(record), 200
-    return jsonify({"message": "Dossier médical non trouvé"}), 404
+exports.updateDoctor = (req, res) => {
+  Doctor.update(req.params.id, req.body, (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Doctor updated successfully' });
+  });
+};
 
-@medical_bp.route("/medical_records/<patient_id>", methods=["PUT"])
-def update_medical_record(patient_id):
-    data = request.json
-    updated = medical_records_collection.update_one({"patient_id": patient_id}, {"$set": data})
-    if updated.modified_count:
-        return jsonify({"message": "Dossier médical mis à jour"}), 200
-    return jsonify({"message": "Aucune modification effectuée"}), 404
+exports.deleteDoctor = (req, res) => {
+  Doctor.delete(req.params.id, (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Doctor deleted successfully' });
+  });
+};
+"@ | Out-File -Encoding utf8 src/controllers/doctorController.js
 
-@medical_bp.route("/medical_records/<patient_id>", methods=["DELETE"])
-def delete_medical_record(patient_id):
-    deleted = medical_records_collection.delete_one({"patient_id": patient_id})
-    if deleted.deleted_count:
-        return jsonify({"message": "Dossier médical supprimé"}), 200
-    return jsonify({"message": "Dossier médical non trouvé"}), 404
-"@ | Set-Content "$projectDir\app\routes.py"
-
-# app.py
+# Step 8: Create Routes (routes/doctorRoutes.js)
 @"
-from flask import Flask
-from app.routes import medical_bp
+const express = require('express');
+const router = express.Router();
+const doctorController = require('../controllers/doctorController');
 
-app = Flask(__name__)
-app.register_blueprint(medical_bp)
+router.get('/doctors', doctorController.getAllDoctors);
+router.get('/doctors/:id', doctorController.getDoctorById);
+router.post('/doctors', doctorController.createDoctor);
+router.put('/doctors/:id', doctorController.updateDoctor);
+router.delete('/doctors/:id', doctorController.deleteDoctor);
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5003, debug=True)
-"@ | Set-Content "$projectDir\app.py"
+module.exports = router;
+"@ | Out-File -Encoding utf8 src/routes/doctorRoutes.js
 
-# requirements.txt
+# Step 9: Create Express App (app.js)
 @"
-Flask
-pymongo
-"@ | Set-Content "$projectDir\requirements.txt"
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const doctorRoutes = require('./src/routes/doctorRoutes');
+require('dotenv').config();
 
-# Dockerfile
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+app.use('/api', doctorRoutes);
+
+const PORT = process.env.PORT || 5004;
+
+app.listen(PORT, () => {
+  console.log(`Médecin Service running on port \${PORT}`);
+});
+"@ | Out-File -Encoding utf8 app.js
+
+# Step 10: Create Dockerfile
 @"
-FROM python:3.9
+FROM node:18
 WORKDIR /app
+COPY package.json .
+RUN npm install
 COPY . .
-RUN pip install -r requirements.txt
-CMD ["python", "app.py"]
-"@ | Set-Content "$projectDir\Dockerfile"
+EXPOSE 5004
+CMD ["node", "app.js"]
+"@ | Out-File -Encoding utf8 Dockerfile
 
-# Vérifier si MongoDB est installé
-$mongoService = Get-Service -Name "MongoDB" -ErrorAction SilentlyContinue
-if (-not $mongoService) {
-    Write-Host "MongoDB n'est pas installé. Installez MongoDB avant d'exécuter ce script."
-    exit 1
-}
+# Step 11: Create docker-compose.yml
+@"
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: medecin_db
+    ports:
+      - "3306:3306"
+    networks:
+      - healthcare-network
 
-# Créer un environnement virtuel
-if (!(Test-Path $envDir)) {
-    Write-Host "Création de l'environnement virtuel..."
-    python -m venv $envDir
-}
+  medecin-service:
+    build: .
+    ports:
+      - "5004:5004"
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASS=rootpassword
+      - DB_NAME=medecin_db
+    depends_on:
+      - mysql
+    networks:
+      - healthcare-network
 
-# Activer l'environnement virtuel
-Write-Host "Activation de l'environnement virtuel..."
-Set-ExecutionPolicy Unrestricted -Scope Process -Force
-& "$envDir\Scripts\Activate"
+networks:
+  healthcare-network:
+    driver: bridge
+"@ | Out-File -Encoding utf8 docker-compose.yml
 
-# Installer les dépendances
-Write-Host "Installation des dépendances..."
-pip install -r "$projectDir\requirements.txt"
-
-# Démarrer le serveur Flask
-Write-Host "Démarrage du service Dossier Médical sur le port 5003..."
-Start-Process -NoNewWindow -FilePath "python" -ArgumentList "$projectDir\app.py"
+# Step 12: Run the Service
+Write-Host "Setup complete. Run 'docker-compose up --build' to start the service."
