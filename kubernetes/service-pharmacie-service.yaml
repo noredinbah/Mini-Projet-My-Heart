@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pharmacie-service
+spec:
+  selector:
+    app: pharmacie-service
+  ports:
+    - protocol: TCP
+      port: 5005
+      targetPort: 5005

@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dossier-medical-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dossier-medical-service
+  template:
+    metadata:
+      labels:
+        app: dossier-medical-service
+    spec:
+      containers:
+        - name: dossier-medical-service
+          image: 
+          ports:
+            - containerPort: 5005

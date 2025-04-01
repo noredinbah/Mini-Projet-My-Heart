@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: laboratoire-service
+spec:
+  selector:
+    app: laboratoire-service
+  ports:
+    - protocol: TCP
+      port: 5005
+      targetPort: 5005

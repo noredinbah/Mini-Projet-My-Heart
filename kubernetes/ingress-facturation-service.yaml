@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facturation-service-ingress
+spec:
+  rules:
+    - host: facturation-service.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: facturation-service
+                port:
+                  number: 5005

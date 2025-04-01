@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pharmacie-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pharmacie-service
+  template:
+    metadata:
+      labels:
+        app: pharmacie-service
+    spec:
+      containers:
+        - name: pharmacie-service
+          image: 
+          ports:
+            - containerPort: 5005

@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dossier-medical-service-ingress
+spec:
+  rules:
+    - host: dossier-medical-service.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dossier-medical-service
+                port:
+                  number: 5005

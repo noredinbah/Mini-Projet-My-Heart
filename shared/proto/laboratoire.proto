@@ -1,0 +1,33 @@
+syntax = 'proto3';
+
+package laboratoire;
+
+// Define gRPC service for managing laboratory results
+service LaboratoireService {
+    rpc GetResultById (GetResultRequest) returns (LaboratoryResult);
+    rpc CreateResult (CreateResultRequest) returns (CreateResultResponse);
+}
+
+message GetResultRequest {
+    string id = 1;
+}
+
+message LaboratoryResult {
+    string id = 1;
+    string patientId = 2;
+    string testName = 3;
+    string result = 4;
+    string date = 5;
+}
+
+message CreateResultRequest {
+    string patientId = 1;
+    string testName = 2;
+    string result = 3;
+    string date = 4;
+}
+
+message CreateResultResponse {
+    string message = 1;
+    string resultId = 2;
+}

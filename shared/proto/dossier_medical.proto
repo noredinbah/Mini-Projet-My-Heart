@@ -1,0 +1,32 @@
+syntax = 'proto3';
+
+package dossier_medical;
+
+// Define gRPC service for managing medical records
+service DossierMedicalService {
+    rpc GetPatientRecord (PatientRequest) returns (PatientRecord);
+    rpc CreatePatientRecord (CreatePatientRequest) returns (CreatePatientResponse);
+}
+
+message PatientRequest {
+    string patientId = 1;
+}
+
+message PatientRecord {
+    string patientId = 1;
+    string name = 2;
+    string birthDate = 3;
+    string medicalHistory = 4;
+}
+
+message CreatePatientRequest {
+    string patientId = 1;
+    string name = 2;
+    string birthDate = 3;
+    string medicalHistory = 4;
+}
+
+message CreatePatientResponse {
+    string message = 1;
+    string patientId = 2;
+}

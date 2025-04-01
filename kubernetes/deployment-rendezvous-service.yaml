@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rendezvous-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rendezvous-service
+  template:
+    metadata:
+      labels:
+        app: rendezvous-service
+    spec:
+      containers:
+        - name: rendezvous-service
+          image: 
+          ports:
+            - containerPort: 5005

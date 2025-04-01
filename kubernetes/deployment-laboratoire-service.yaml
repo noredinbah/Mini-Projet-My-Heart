@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laboratoire-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: laboratoire-service
+  template:
+    metadata:
+      labels:
+        app: laboratoire-service
+    spec:
+      containers:
+        - name: laboratoire-service
+          image: 
+          ports:
+            - containerPort: 5005

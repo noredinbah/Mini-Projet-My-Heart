@@ -1,0 +1,16 @@
+{
+  "name": "laboratoire-service",
+  "version": "1.0.0",
+  "description": "Laboratoire service for healthcare system",
+  "main": "src/server/index.js",
+  "scripts": {
+    "start": "node src/server/index.js"
+  },
+  "dependencies": {
+    "grpc": "^1.24.3",
+    "mongoose": "^5.10.9"
+  },
+  "devDependencies": {},
+  "author": "",
+  "license": "ISC"
+}

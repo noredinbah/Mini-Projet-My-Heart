@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pharmacie-service-ingress
+spec:
+  rules:
+    - host: pharmacie-service.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pharmacie-service
+                port:
+                  number: 5005

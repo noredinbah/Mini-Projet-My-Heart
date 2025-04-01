@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facturation-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: facturation-service
+  template:
+    metadata:
+      labels:
+        app: facturation-service
+    spec:
+      containers:
+        - name: facturation-service
+          image: 
+          ports:
+            - containerPort: 5005
